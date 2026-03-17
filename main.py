@@ -4,100 +4,135 @@ import random
 import time
 import os
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION ET STYLE ---
 st.set_page_config(page_title="Bus Simulator Online", page_icon="🚌", layout="wide")
 
-# Fichier pour sauvegarder les scores
-SCORE_FILE = "scores_bus.csv"
+# Simulation d'une base de données locale
+DB_FILE = "bus_sim_data.csv"
 
-def charger_scores():
-    if os.path.exists(SCORE_FILE):
-        return pd.read_csv(SCORE_FILE)
-    return pd.DataFrame(columns=["Pseudo", "XP"])
+def charger_donnees():
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)
+    return pd.DataFrame(columns=["Pseudo", "XP", "Argent"])
 
-def sauvegarder_score(pseudo, xp):
-    df = charger_scores()
+def sauvegarder_donnees(pseudo, xp, argent):
+    df = charger_donnees()
     if pseudo in df["Pseudo"].values:
         df.loc[df["Pseudo"] == pseudo, "XP"] += xp
+        df.loc[df["Pseudo"] == pseudo, "Argent"] += argent
     else:
-        new_row = pd.DataFrame({"Pseudo": [pseudo], "XP": [xp]})
+        new_row = pd.DataFrame({"Pseudo": [pseudo], "XP": [xp], "Argent": [argent]})
         df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(SCORE_FILE, index=False)
+    df.to_csv(DB_FILE, index=False)
 
-# --- INITIALISATION ---
-if 'xp_session' not in st.session_state:
-    st.session_state.xp_session = 0
-if 'en_service' not in st.session_state:
+# --- INITIALISATION SESSION ---
+if 'argent' not in st.session_state:
+    st.session_state.argent = 500  # Budget de départ
+    st.session_state.bus_possedes = ["Minibus Occasion"]
+    st.session_state.bus_actuel = "Minibus Occasion"
     st.session_state.en_service = False
 
-# --- BARRE LATÉRALE : PROFIL ---
-st.sidebar.title("🎮 Espace Chauffeur")
+# --- SIDEBAR : TABLEAU DE BORD ---
+st.sidebar.title("🎮 Dashboard Chauffeur")
 pseudo = st.sidebar.text_input("Ton Pseudo :", value="Chauffeur_Anonyme")
-st.sidebar.metric("XP Gagnée ce jour", st.session_state.xp_session)
 
-# Affichage du Leaderboard
-st.sidebar.subheader("🏆 Classement Online")
-df_scores = charger_scores().sort_values(by="XP", ascending=False).head(5)
-st.sidebar.table(df_scores)
+# Récupérer les données globales
+stats_globales = charger_donnees()
+ma_ligne = stats_globales[stats_globales["Pseudo"] == pseudo]
+xp_totale = ma_ligne["XP"].values[0] if not ma_ligne.empty else 0
+argent_total = ma_ligne["Argent"].values[0] if not ma_ligne.empty else st.session_state.argent
+
+st.sidebar.metric("💰 Portefeuille", f"{argent_total} €")
+st.sidebar.metric("⭐ Expérience", f"{xp_totale} XP")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🏆 Top 3 Mondiaux")
+st.sidebar.table(stats_globales.sort_values("XP", ascending=False).head(3)[["Pseudo", "XP"]])
 
 # --- INTERFACE PRINCIPALE ---
-st.title("🚌 Bus Simulator Online")
-st.markdown("---")
+tab1, tab2, tab3 = st.tabs(["🚀 Service", "🏗️ Garage", "🗺️ Carte du Réseau"])
 
-# 1. Choix du Bus et de la Ligne
-if not st.session_state.en_service:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("🚐 Choisir ton bus")
-        bus_type = st.radio("Modèle :", ["Minibus (Rapide)", "Bus Standard (Équilibré)", "Bus Articulé (Difficile)"])
-    
-    with col2:
-        st.subheader("🗺️ Choisir ta ligne")
+# --- TAB 1 : LE SERVICE ---
+with tab1:
+    if not st.session_state.en_service:
+        st.header("Prêt pour le départ ?")
+        
         lignes = {
-            "Altkirch - Ferrette (829)": {"distance": 20, "gain": 40},
-            "Altkirch - Mulhouse (821)": {"distance": 35, "gain": 80},
-            "Navette Sundgauvienne": {"distance": 10, "gain": 20}
+            "Altkirch ↔ Ferrette": {"coordonnees": [47.623, 7.239], "gain": 150, "xp": 40},
+            "Dannemarie ↔ Altkirch": {"coordonnees": [47.611, 7.117], "gain": 200, "xp": 60},
+            "Hirsingue ↔ Waldighofen": {"coordonnees": [47.584, 7.251], "gain": 120, "xp": 30}
         }
-        ligne_choisie = st.selectbox("Destination :", list(lignes.keys()))
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            choix_ligne = st.selectbox("Choisir une ligne :", list(lignes.keys()))
+            meteo = random.choice(["Ensoleillé ☀️", "Pluie 🌧️", "Brouillard 🌫️"])
+            st.write(f"Météo actuelle : **{meteo}**")
+        
+        with col2:
+            st.write(f"Bus utilisé : **{st.session_state.bus_actuel}**")
+            multiplier = 1.5 if meteo != "Ensoleillé ☀️" else 1.0
+            st.write(f"Prime météo : x{multiplier}")
 
-    if st.button("🚀 Démarrer le Service"):
-        st.session_state.en_service = True
-        st.session_state.ligne_actuelle = ligne_choisie
-        st.session_state.info_ligne = lignes[ligne_choisie]
-        st.rerun()
+        if st.button("Démarrer la tournée"):
+            st.session_state.en_service = True
+            st.session_state.ligne_active = choix_ligne
+            st.session_state.gain_potentiel = int(lignes[choix_ligne]["gain"] * multiplier)
+            st.session_state.xp_potentielle = lignes[choix_ligne]["xp"]
+            st.rerun()
+    else:
+        st.header(f"🚏 En route vers {st.session_state.ligne_active}")
+        progress = st.progress(0)
+        status = st.empty()
+        
+        for i in range(101):
+            time.sleep(0.04)
+            progress.progress(i)
+            if i == 20: status.warning("Passagers bruyants à l'arrière... 📢")
+            if i == 50: status.info("Check-point : Altkirch Centre. ✅")
+            if i == 80: status.success("Le terminus approche ! 🏁")
+        
+        if st.button("Terminer et encaisser"):
+            sauvegarder_donnees(pseudo, st.session_state.xp_potentielle, st.session_state.gain_potentiel)
+            st.session_state.en_service = False
+            st.success(f"Bravo ! +{st.session_state.gain_potentiel}€ et +{st.session_state.xp_potentielle}XP")
+            st.rerun()
 
-# 2. Simulation du Trajet
-else:
-    st.header(f"📍 Trajet en cours : {st.session_state.ligne_actuelle}")
+# --- TAB 2 : LE GARAGE ---
+with tab2:
+    st.header("Acheter un nouveau bus")
+    catalogue = {
+        "Bus Standard Fluo": 1500,
+        "Autocar de Grand Tourisme": 5000,
+        "Bus Électrique Sundgau": 12000
+    }
     
-    # Barre de progression
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Simulation d'événements aléatoires
-    evenements = [
-        "Tout est calme, les passagers admirent le Sundgau. 🌲",
-        "Attention ! Un tracteur bloque la route près d'Hirsingue. 🚜",
-        "Arrêt demandé ! Un passager monte à bord. 🚏",
-        "Pluie battante, ralentissez pour la sécurité ! 🌧️"
-    ]
-    
-    for i in range(1, 101):
-        time.sleep(0.05) # On simule le trajet
-        progress_bar.progress(i)
-        if i % 25 == 0:
-            status_text.info(random.choice(evenements))
-            
-    # Fin de trajet
-    st.success(f"🏁 Terminus ! Vous avez atteint votre destination.")
-    xp_gagne = st.session_state.info_ligne["gain"]
-    
-    if st.button("💰 Encaisser l'XP et Terminer"):
-        st.session_state.xp_session += xp_gagne
-        sauvegarder_score(pseudo, xp_gagne)
-        st.session_state.en_service = False
-        st.rerun()
+    for bus, prix in catalogue.items():
+        c1, c2 = st.columns([3, 1])
+        c1.write(f"**{bus}** - {prix} €")
+        if bus in st.session_state.bus_possedes:
+            c2.success("Possédé")
+            if st.session_state.bus_actuel != bus:
+                if c2.button("Choisir", key=bus):
+                    st.session_state.bus_actuel = bus
+                    st.rerun()
+        else:
+            if c2.button("Acheter", key=bus):
+                if argent_total >= prix:
+                    sauvegarder_donnees(pseudo, 0, -prix) # On déduit l'argent
+                    st.session_state.bus_possedes.append(bus)
+                    st.success(f"Félicitations ! Tu as acheté le {bus}")
+                    st.rerun()
+                else:
+                    st.error("Fonds insuffisants !")
 
-# --- BAS DE PAGE ---
-st.markdown("---")
-st.caption("Projet : Bus Simulator Online - Développé en Python avec Streamlit")
+# --- TAB 3 : CARTE DU RÉSEAU ---
+with tab3:
+    st.header("Carte des lignes du Sundgau")
+    # Coordonnées réelles approximatives du Sundgau
+    map_data = pd.DataFrame({
+        'lat': [47.6231, 47.6115, 47.5847, 47.4893],
+        'lon': [7.2392, 7.1171, 7.2514, 7.3117]
+    })
+    st.map(map_data)
+    st.caption("Points desservis : Altkirch, Dannemarie, Hirsingue, Ferrette.")
