@@ -1,138 +1,105 @@
 import streamlit as st
 import pandas as pd
-import random
 import time
-import os
+import random
 
-# --- CONFIGURATION ET STYLE ---
-st.set_page_config(page_title="Bus Simulator Online", page_icon="🚌", layout="wide")
+# --- CONFIGURATION VISUELLE ---
+st.set_page_config(page_title="BUS SIMULATOR ONLINE", layout="wide", page_icon="🚌")
 
-# Simulation d'une base de données locale
-DB_FILE = "bus_sim_data.csv"
-
-def charger_donnees():
-    if os.path.exists(DB_FILE):
-        return pd.read_csv(DB_FILE)
-    return pd.DataFrame(columns=["Pseudo", "XP", "Argent"])
-
-def sauvegarder_donnees(pseudo, xp, argent):
-    df = charger_donnees()
-    if pseudo in df["Pseudo"].values:
-        df.loc[df["Pseudo"] == pseudo, "XP"] += xp
-        df.loc[df["Pseudo"] == pseudo, "Argent"] += argent
-    else:
-        new_row = pd.DataFrame({"Pseudo": [pseudo], "XP": [xp], "Argent": [argent]})
-        df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(DB_FILE, index=False)
-
-# --- INITIALISATION SESSION ---
-if 'argent' not in st.session_state:
-    st.session_state.argent = 500  # Budget de départ
-    st.session_state.bus_possedes = ["Minibus Occasion"]
-    st.session_state.bus_actuel = "Minibus Occasion"
-    st.session_state.en_service = False
-
-# --- SIDEBAR : TABLEAU DE BORD ---
-st.sidebar.title("🎮 Dashboard Chauffeur")
-pseudo = st.sidebar.text_input("Ton Pseudo :", value="Chauffeur_Anonyme")
-
-# Récupérer les données globales
-stats_globales = charger_donnees()
-ma_ligne = stats_globales[stats_globales["Pseudo"] == pseudo]
-xp_totale = ma_ligne["XP"].values[0] if not ma_ligne.empty else 0
-argent_total = ma_ligne["Argent"].values[0] if not ma_ligne.empty else st.session_state.argent
-
-st.sidebar.metric("💰 Portefeuille", f"{argent_total} €")
-st.sidebar.metric("⭐ Expérience", f"{xp_totale} XP")
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🏆 Top 3 Mondiaux")
-st.sidebar.table(stats_globales.sort_values("XP", ascending=False).head(3)[["Pseudo", "XP"]])
-
-# --- INTERFACE PRINCIPALE ---
-tab1, tab2, tab3 = st.tabs(["🚀 Service", "🏗️ Garage", "🗺️ Carte du Réseau"])
-
-# --- TAB 1 : LE SERVICE ---
-with tab1:
-    if not st.session_state.en_service:
-        st.header("Prêt pour le départ ?")
-        
-        lignes = {
-            "Altkirch ↔ Ferrette": {"coordonnees": [47.623, 7.239], "gain": 150, "xp": 40},
-            "Dannemarie ↔ Altkirch": {"coordonnees": [47.611, 7.117], "gain": 200, "xp": 60},
-            "Hirsingue ↔ Waldighofen": {"coordonnees": [47.584, 7.251], "gain": 120, "xp": 30}
-        }
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            choix_ligne = st.selectbox("Choisir une ligne :", list(lignes.keys()))
-            meteo = random.choice(["Ensoleillé ☀️", "Pluie 🌧️", "Brouillard 🌫️"])
-            st.write(f"Météo actuelle : **{meteo}**")
-        
-        with col2:
-            st.write(f"Bus utilisé : **{st.session_state.bus_actuel}**")
-            multiplier = 1.5 if meteo != "Ensoleillé ☀️" else 1.0
-            st.write(f"Prime météo : x{multiplier}")
-
-        if st.button("Démarrer la tournée"):
-            st.session_state.en_service = True
-            st.session_state.ligne_active = choix_ligne
-            st.session_state.gain_potentiel = int(lignes[choix_ligne]["gain"] * multiplier)
-            st.session_state.xp_potentielle = lignes[choix_ligne]["xp"]
-            st.rerun()
-    else:
-        st.header(f"🚏 En route vers {st.session_state.ligne_active}")
-        progress = st.progress(0)
-        status = st.empty()
-        
-        for i in range(101):
-            time.sleep(0.04)
-            progress.progress(i)
-            if i == 20: status.warning("Passagers bruyants à l'arrière... 📢")
-            if i == 50: status.info("Check-point : Altkirch Centre. ✅")
-            if i == 80: status.success("Le terminus approche ! 🏁")
-        
-        if st.button("Terminer et encaisser"):
-            sauvegarder_donnees(pseudo, st.session_state.xp_potentielle, st.session_state.gain_potentiel)
-            st.session_state.en_service = False
-            st.success(f"Bravo ! +{st.session_state.gain_potentiel}€ et +{st.session_state.xp_potentielle}XP")
-            st.rerun()
-
-# --- TAB 2 : LE GARAGE ---
-with tab2:
-    st.header("Acheter un nouveau bus")
-    catalogue = {
-        "Bus Standard Fluo": 1500,
-        "Autocar de Grand Tourisme": 5000,
-        "Bus Électrique Sundgau": 12000
+# Injection de CSS pour un look "Gaming"
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; color: #ffffff; }
+    .stButton>button {
+        width: 100%;
+        border-radius: 10px;
+        height: 3em;
+        background-color: #ff4b4b;
+        color: white;
+        font-weight: bold;
+        border: none;
+        transition: 0.3s;
     }
-    
-    for bus, prix in catalogue.items():
-        c1, c2 = st.columns([3, 1])
-        c1.write(f"**{bus}** - {prix} €")
-        if bus in st.session_state.bus_possedes:
-            c2.success("Possédé")
-            if st.session_state.bus_actuel != bus:
-                if c2.button("Choisir", key=bus):
-                    st.session_state.bus_actuel = bus
-                    st.rerun()
-        else:
-            if c2.button("Acheter", key=bus):
-                if argent_total >= prix:
-                    sauvegarder_donnees(pseudo, 0, -prix) # On déduit l'argent
-                    st.session_state.bus_possedes.append(bus)
-                    st.success(f"Félicitations ! Tu as acheté le {bus}")
-                    st.rerun()
-                else:
-                    st.error("Fonds insuffisants !")
+    .stButton>button:hover { background-color: #ff2b2b; transform: scale(1.02); }
+    .status-box {
+        padding: 20px;
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid #3e3e3e;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- TAB 3 : CARTE DU RÉSEAU ---
-with tab3:
-    st.header("Carte des lignes du Sundgau")
-    # Coordonnées réelles approximatives du Sundgau
-    map_data = pd.DataFrame({
-        'lat': [47.6231, 47.6115, 47.5847, 47.4893],
-        'lon': [7.2392, 7.1171, 7.2514, 7.3117]
-    })
-    st.map(map_data)
-    st.caption("Points desservis : Altkirch, Dannemarie, Hirsingue, Ferrette.")
+# --- DONNÉES ET LOGIQUE ---
+if 'carburant' not in st.session_state:
+    st.session_state.carburant = 100
+    st.session_state.argent = 500
+    st.session_state.messages = ["Système : Bienvenue chauffeur !"]
+
+# --- SIDEBAR (Le Profil) ---
+with st.sidebar:
+    st.image("https://img.freepik.com/vecteurs-premium/logo-bus-vectoriel-concept-conception-logo-transport-bus-illustration-vectorielle-isolee_636060-496.jpg", width=100)
+    st.title("🕹️ Cockpit")
+    st.metric("Portefeuille", f"{st.session_state.argent} €")
+    st.write(f"⛽ Carburant : {'🔴' if st.session_state.carburant < 20 else '🟢'} {st.session_state.carburant}%")
+    st.progress(st.session_state.carburant / 100)
+    
+    st.markdown("---")
+    st.subheader("💬 Chat Online")
+    for msg in st.session_state.messages[-5:]:
+        st.caption(msg)
+    chat_input = st.text_input("Envoyer un message :", key="chat")
+    if st.button("Envoyer"):
+        st.session_state.messages.append(f"Moi : {chat_input}")
+        st.rerun()
+
+# --- CORPS DU JEU ---
+col_stats, col_jeu = st.columns([1, 2])
+
+with col_stats:
+    st.subheader("🚐 Ton Véhicule")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Iveco_Crossway_LE_R%C3%A9seau_67.jpg/1200px-Iveco_Crossway_LE_R%C3%A9seau_67.jpg", caption="Iveco Crossway - Edition Sundgau")
+    
+    if st.button("⛽ Faire le plein (50€)"):
+        if st.session_state.argent >= 50:
+            st.session_state.argent -= 50
+            st.session_state.carburant = 100
+            st.success("Réservoir plein !")
+            st.rerun()
+
+with col_jeu:
+    st.subheader("🛣️ Prochaine Tournée")
+    
+    ligne = st.selectbox("Ligne active :", ["Ligne 829 : Altkirch > Ferrette", "Ligne 821 : Mulhouse Express", "Navette de Nuit"])
+    
+    if st.button("🏁 DÉMARRER LE SERVICE"):
+        if st.session_state.carburant > 20:
+            # Animation de conduite
+            with st.status("🚌 Bus en circulation dans le Sundgau...", expanded=True) as status:
+                st.write("Passage à Hirsingue...")
+                time.sleep(1)
+                st.write("Arrêt à la gare d'Altkirch...")
+                time.sleep(1)
+                st.write("Montée des passagers lycéens...")
+                time.sleep(1)
+                status.update(label="Course terminée !", state="complete", expanded=False)
+            
+            # Résultats
+            gain = random.randint(80, 150)
+            st.session_state.argent += gain
+            st.session_state.carburant -= 15
+            st.balloons()
+            st.success(f"Bravo ! Tu as encaissé {gain}€.")
+            st.session_state.messages.append(f"Système : Course terminée sur la {ligne} !")
+        else:
+            st.error("Pas assez de carburant pour partir !")
+
+# --- SYSTÈME DE CARTES (Le bonus attirant) ---
+st.markdown("---")
+st.subheader("📍 Carte du Réseau en Temps Réel")
+# Création d'une fausse position de bus aléatoire
+bus_pos = pd.DataFrame({
+    'lat': [47.62 + random.uniform(-0.05, 0.05)],
+    'lon': [7.23 + random.uniform(-0.05, 0.05)]
+})
+st.map(bus_pos)
