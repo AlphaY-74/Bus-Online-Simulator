@@ -1,105 +1,94 @@
 import streamlit as st
 import pandas as pd
-import time
-import random
+import os
 
-# --- CONFIGURATION VISUELLE ---
-st.set_page_config(page_title="BUS SIMULATOR ONLINE", layout="wide", page_icon="🚌")
+DB_REGIONS = "regions_communaute.csv"
 
-# Injection de CSS pour un look "Gaming"
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; color: #ffffff; }
-    .stButton>button {
-        width: 100%;
-        border-radius: 10px;
-        height: 3em;
-        background-color: #ff4b4b;
-        color: white;
-        font-weight: bold;
-        border: none;
-        transition: 0.3s;
-    }
-    .stButton>button:hover { background-color: #ff2b2b; transform: scale(1.02); }
-    .status-box {
-        padding: 20px;
-        border-radius: 15px;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid #3e3e3e;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- FONCTIONS DE GESTION ---
+def charger_regions():
+    if os.path.exists(DB_REGIONS):
+        return pd.read_csv(DB_REGIONS)
+    # Régions par défaut si le fichier n'existe pas
+    return pd.DataFrame([
+        {"Nom": "Sundgau Central", "Gain": 100, "Statut": "publié", "Auteur": "Admin"},
+        {"Nom": "Vallée de la Doller", "Gain": 120, "Statut": "publié", "Auteur": "Admin"}
+    ])
 
-# --- DONNÉES ET LOGIQUE ---
-if 'carburant' not in st.session_state:
-    st.session_state.carburant = 100
-    st.session_state.argent = 500
-    st.session_state.messages = ["Système : Bienvenue chauffeur !"]
+def ajouter_proposition(nom, gain, auteur):
+    df = charger_regions()
+    # On vérifie si elle n'existe pas déjà
+    if nom not in df["Nom"].values:
+        nouvelle_region = pd.DataFrame([{"Nom": nom, "Gain": gain, "Statut": "en_attente", "Auteur": auteur}])
+        df = pd.concat([df, nouvelle_region], ignore_index=True)
+        df.to_csv(DB_REGIONS, index=False)
+        return True
+    return False
 
-# --- SIDEBAR (Le Profil) ---
-with st.sidebar:
-    st.image("https://img.freepik.com/vecteurs-premium/logo-bus-vectoriel-concept-conception-logo-transport-bus-illustration-vectorielle-isolee_636060-496.jpg", width=100)
-    st.title("🕹️ Cockpit")
-    st.metric("Portefeuille", f"{st.session_state.argent} €")
-    st.write(f"⛽ Carburant : {'🔴' if st.session_state.carburant < 20 else '🟢'} {st.session_state.carburant}%")
-    st.progress(st.session_state.carburant / 100)
+def valider_region(nom, action):
+    df = charger_regions()
+    if action == "publier":
+        df.loc[df["Nom"] == nom, "Statut"] = "publié"
+    elif action == "supprimer":
+        df = df[df["Nom"] != nom]
+    df.to_csv(DB_REGIONS, index=False)
+
+# --- INTERFACE ---
+st.title("🗺️ Extension du Réseau")
+
+menu = ["Jouer", "Proposer une Région", "🛡️ Admin"]
+choix = st.sidebar.selectbox("Menu Navigation", menu)
+
+# --- SECTION 1 : JOUER (Affiche seulement le 'publié') ---
+if choix == "Jouer":
+    st.header("Choisir une destination validée")
+    df = charger_regions()
+    regions_dispos = df[df["Statut"] == "publié"]
     
-    st.markdown("---")
-    st.subheader("💬 Chat Online")
-    for msg in st.session_state.messages[-5:]:
-        st.caption(msg)
-    chat_input = st.text_input("Envoyer un message :", key="chat")
-    if st.button("Envoyer"):
-        st.session_state.messages.append(f"Moi : {chat_input}")
-        st.rerun()
+    for index, row in regions_dispos.iterrows():
+        with st.expander(f"📍 {row['Nom']}"):
+            st.write(f"Gain estimé : {row['Gain']} €")
+            st.caption(f"Ajouté par : {row['Auteur']}")
+            if st.button(f"Conduire vers {row['Nom']}", key=index):
+                st.info(f"Départ imminent pour {row['Nom']} !")
 
-# --- CORPS DU JEU ---
-col_stats, col_jeu = st.columns([1, 2])
+# --- SECTION 2 : PROPOSER ---
+elif choix == "Proposer une Région":
+    st.header("Suggérer une nouvelle zone de jeu")
+    with st.form("form_region"):
+        nom_p = st.text_input("Nom de la région (ex: Alsace Bossue, Jura...)")
+        gain_p = st.number_input("Gain par course (€)", min_value=10, max_value=1000, value=100)
+        auteur_p = st.text_input("Ton pseudo")
+        submit = st.form_submit_button("Envoyer pour validation")
+        
+        if submit:
+            if nom_p and auteur_p:
+                if ajouter_proposition(nom_p, gain_p, auteur_p):
+                    st.success("✅ Proposition envoyée ! Un admin va l'étudier.")
+                else:
+                    st.warning("Cette région est déjà dans la liste.")
+            else:
+                st.error("Remplis tous les champs !")
 
-with col_stats:
-    st.subheader("🚐 Ton Véhicule")
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Iveco_Crossway_LE_R%C3%A9seau_67.jpg/1200px-Iveco_Crossway_LE_R%C3%A9seau_67.jpg", caption="Iveco Crossway - Edition Sundgau")
+# --- SECTION 3 : ADMIN (Protégé par mot de passe) ---
+elif choix == "🛡️ Admin":
+    st.header("Panneau de modération")
+    password = st.text_input("Code secret Admin", type="password")
     
-    if st.button("⛽ Faire le plein (50€)"):
-        if st.session_state.argent >= 50:
-            st.session_state.argent -= 50
-            st.session_state.carburant = 100
-            st.success("Réservoir plein !")
-            st.rerun()
-
-with col_jeu:
-    st.subheader("🛣️ Prochaine Tournée")
-    
-    ligne = st.selectbox("Ligne active :", ["Ligne 829 : Altkirch > Ferrette", "Ligne 821 : Mulhouse Express", "Navette de Nuit"])
-    
-    if st.button("🏁 DÉMARRER LE SERVICE"):
-        if st.session_state.carburant > 20:
-            # Animation de conduite
-            with st.status("🚌 Bus en circulation dans le Sundgau...", expanded=True) as status:
-                st.write("Passage à Hirsingue...")
-                time.sleep(1)
-                st.write("Arrêt à la gare d'Altkirch...")
-                time.sleep(1)
-                st.write("Montée des passagers lycéens...")
-                time.sleep(1)
-                status.update(label="Course terminée !", state="complete", expanded=False)
-            
-            # Résultats
-            gain = random.randint(80, 150)
-            st.session_state.argent += gain
-            st.session_state.carburant -= 15
-            st.balloons()
-            st.success(f"Bravo ! Tu as encaissé {gain}€.")
-            st.session_state.messages.append(f"Système : Course terminée sur la {ligne} !")
+    if password == "sundgau2026": # Ton mot de passe
+        df = charger_regions()
+        en_attente = df[df["Statut"] == "en_attente"]
+        
+        if en_attente.empty:
+            st.write("Aucune proposition en attente. ☕")
         else:
-            st.error("Pas assez de carburant pour partir !")
-
-# --- SYSTÈME DE CARTES (Le bonus attirant) ---
-st.markdown("---")
-st.subheader("📍 Carte du Réseau en Temps Réel")
-# Création d'une fausse position de bus aléatoire
-bus_pos = pd.DataFrame({
-    'lat': [47.62 + random.uniform(-0.05, 0.05)],
-    'lon': [7.23 + random.uniform(-0.05, 0.05)]
-})
-st.map(bus_pos)
+            for index, row in en_attente.iterrows():
+                col1, col2, col3 = st.columns([2, 1, 1])
+                col1.write(f"**{row['Nom']}** (par {row['Auteur']}) - {row['Gain']}€")
+                if col2.button("✅ Publier", key=f"pub{index}"):
+                    valider_region(row['Nom'], "publier")
+                    st.rerun()
+                if col3.button("❌ Refuser", key=f"ref{index}"):
+                    valider_region(row['Nom'], "supprimer")
+                    st.rerun()
+    elif password:
+        st.error("Code incorrect !")
